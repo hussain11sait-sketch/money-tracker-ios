@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
+export const dynamic = 'force-dynamic';
+
 // No-store cache to prevent ghost entries
 const supabase = createClient(
   'https://bogwtbvmvzgbodlybgow.supabase.co',
@@ -72,13 +74,13 @@ export default function App() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  
+ 
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [activeWalletIdx, setActiveWalletIdx] = useState(0);
-  
+ 
   const [isAddBankOpen, setIsAddBankOpen] = useState(false);
   const [isAddCardOpen, setIsAddCardOpen] = useState(false);
-  
+ 
   // Edit Card State
   const [isEditCardModalOpen, setIsEditCardModalOpen] = useState(false);
   const [editCardName, setEditCardName] = useState('');
@@ -88,7 +90,7 @@ export default function App() {
 
   const [newBankName, setNewBankName] = useState('');
   const [newBankDigits, setNewBankDigits] = useState('');
-  
+ 
   const [cardType, setCardType] = useState<'credit' | 'debit'>('credit');
   const [selectedLinkedBank, setSelectedLinkedBank] = useState('');
   const [newCardBank, setNewCardBank] = useState('');
@@ -100,20 +102,20 @@ export default function App() {
   const [banks, setBanks] = useState<string[]>(['UPI / GPay', 'Cash']);
   const [cards, setCards] = useState<string[]>([]);
   const [cardMeta, setCardMeta] = useState<Record<string, CardMetadata>>({});
-  
+ 
   const [touchStart, setTouchStart] = useState(0);
   const [swipedCard, setSwipedCard] = useState<string | null>(null);
 
   const [dragStartX, setDragStartX] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
   const [swipedTxId, setSwipedTxId] = useState<string | null>(null);
-  
+ 
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedTxs, setSelectedTxs] = useState<string[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  
+ 
   // --- OFFLINE STATES ---
   const [isOnline, setIsOnline] = useState(true);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
@@ -128,7 +130,7 @@ export default function App() {
   const [appPin, setAppPin] = useState<string | null>(null);
   const [enteredPin, setEnteredPin] = useState('');
   const [biometricEnabled, setBiometricEnabled] = useState(false);
-  
+ 
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   const [setupStep, setSetupStep] = useState<0 | 1 | 2>(0); 
   const [tempPin, setTempPin] = useState('');
@@ -141,7 +143,7 @@ export default function App() {
   const [source, setSource] = useState('UPI / GPay');
   const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
   const [txType, setTxType] = useState<'expense' | 'income'>('expense');
-  
+ 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editAmount, setEditAmount] = useState('');
@@ -216,14 +218,14 @@ export default function App() {
     const metadataMap: Record<string, CardMetadata> = {};
 
     const dbBanks = data.filter((a: any) => a.type === 'bank').map((a: any) => a.name);
-    
+   
     data.filter((a: any) => a.type === 'card').forEach((a: any) => {
       const rawName: string = a.name;
       let linkedBankStr = '';
       if (rawName.includes('->')) {
          linkedBankStr = rawName.split('->')[1].trim();
       }
-      
+     
       const mainPart = rawName.includes('->') ? rawName.split('->')[0] : rawName;
       const metaParts = mainPart.split('|');
       const cleanDisplayName = metaParts[0].trim();
@@ -239,7 +241,7 @@ export default function App() {
         };
       }
     });
-    
+   
     fetchedBanks = Array.from(new Set([...fetchedBanks, ...dbBanks]));
     setBanks(fetchedBanks);
     setCards(fetchedCards);
@@ -283,7 +285,7 @@ export default function App() {
 
   const fetchData = async () => {
     if (!navigator.onLine || !session) return;
-    
+   
     setIsRefreshing(true);
     try {
       const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 8000));
@@ -351,7 +353,7 @@ export default function App() {
     try {
       const credIdBase64 = localStorage.getItem('mt_cred_id');
       if (!credIdBase64) return;
-      
+     
       const binaryString = atob(credIdBase64);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
@@ -362,7 +364,7 @@ export default function App() {
         userVerification: "required",
         timeout: 60000
       };
-      
+     
       const assertion = await navigator.credentials.get({ publicKey });
       if (assertion) {
         setIsLocked(false);
@@ -385,7 +387,7 @@ export default function App() {
         timeout: 60000,
         attestation: "none"
       };
-      
+     
       const cred = await navigator.credentials.create({ publicKey });
       if (cred) {
         localStorage.setItem('mt_bio', 'true');
@@ -452,7 +454,7 @@ export default function App() {
       const cleanedLocal = JSON.parse(localTxs).map((tx: any) => ({ ...tx, source: cleanSource(tx.source) }));
       setTransactions(cleanedLocal);
     }
-    
+   
     if (localAccs) processAccountsData(JSON.parse(localAccs));
     setPendingSyncCount(localQueue.length);
 
@@ -535,7 +537,7 @@ export default function App() {
     if (!banks.includes(detectedBank) && !cards.includes(detectedBank)) {
       setBanks(prev => [...prev, detectedBank]);
       const newAcc = { id: generateUUID(), name: detectedBank, type: 'bank', created_at: new Date().toISOString(), user_id: session?.user?.id };
-      
+     
       const localAccs = JSON.parse(localStorage.getItem('mt_accs') || '[]');
       localStorage.setItem('mt_accs', JSON.stringify([...localAccs, newAcc]));
 
@@ -570,7 +572,7 @@ export default function App() {
       if (dateIdx === -1 || descIdx === -1) return;
 
       const dateRegex = /\d{2}[\/\-]\d{2}[\/\-]\d{2,4}/;
-      
+     
       if (cols[dateIdx] && dateRegex.test(cols[dateIdx])) {
          const rawDateStr = cols[dateIdx].match(dateRegex)?.[0];
          if (!rawDateStr) return;
@@ -629,7 +631,7 @@ export default function App() {
     } else {
       alert(`Statement processed for ${detectedBank}. No new transactions found.`);
     }
-    
+   
     setIsRefreshing(false);
     if (e.target) e.target.value = ''; 
   };
@@ -637,7 +639,7 @@ export default function App() {
   const handlePayBill = async (accName: string) => {
     const accBalance = getAccountBalance(accName);
     if (accBalance >= 0) return alert('No outstanding balance on this card!');
-    
+   
     if (!confirm(`Pay off the outstanding balance of ₹${Math.abs(accBalance).toFixed(2)}?`)) return;
 
     const newTx = { 
@@ -650,7 +652,7 @@ export default function App() {
       created_at: new Date().toISOString(),
       user_id: session?.user?.id
     };
-    
+   
     const updatedTxs = [newTx, ...transactions].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
     setTransactions(updatedTxs);
     localStorage.setItem('mt_txs', JSON.stringify(updatedTxs));
@@ -680,7 +682,7 @@ export default function App() {
       created_at: new Date().toISOString(),
       user_id: session?.user?.id
     };
-    
+   
     const updatedTxs = [newTx, ...transactions].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
     setTransactions(updatedTxs);
     localStorage.setItem('mt_txs', JSON.stringify(updatedTxs));
@@ -742,10 +744,10 @@ export default function App() {
   const addTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!amount || !title) return;
-    
+   
     const jsDate = new Date(txDate);
     const formattedDate = !isNaN(jsDate.getTime()) ? jsDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : txDate;
-    
+   
     const newTx = { 
       id: generateUUID(), 
       title: title.trim(), 
@@ -756,7 +758,7 @@ export default function App() {
       created_at: new Date().toISOString(),
       user_id: session?.user?.id
     };
-    
+   
     const updatedTxs = [newTx, ...transactions].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
     setTransactions(updatedTxs);
     localStorage.setItem('mt_txs', JSON.stringify(updatedTxs));
@@ -767,7 +769,7 @@ export default function App() {
     } else {
       addToQueue({ action: 'INSERT', table: 'transactions', payload: [newTx] });
     }
-    
+   
     setTitle(''); setAmount(''); setTxType('expense'); setTxDate(new Date().toISOString().split('T')[0]);
     setIsModalOpen(false);
   };
@@ -775,7 +777,7 @@ export default function App() {
   const deleteTransaction = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (!confirm('Are you sure you want to delete this record?')) return;
-    
+   
     const updatedTxs = transactions.filter(t => t.id !== id);
     setTransactions(updatedTxs);
     localStorage.setItem('mt_txs', JSON.stringify(updatedTxs));
@@ -792,7 +794,7 @@ export default function App() {
   const deleteSelectedTransactions = async () => {
     if (selectedTxs.length === 0) return;
     if (!confirm(`Are you sure you want to delete ${selectedTxs.length} records?`)) return;
-    
+   
     const updatedTxs = transactions.filter(t => !selectedTxs.includes(t.id));
     setTransactions(updatedTxs);
     localStorage.setItem('mt_txs', JSON.stringify(updatedTxs));
@@ -803,7 +805,7 @@ export default function App() {
     } else {
       addToQueue({ action: 'DELETE_IN', table: 'transactions', ids: selectedTxs });
     }
-    
+   
     setIsSelectMode(false);
     setSelectedTxs([]);
   };
@@ -820,7 +822,7 @@ export default function App() {
     setEditAmount(tx.amount.toString()); 
     setEditSource(cleanSource(tx.source)); 
     setEditType(tx.type as 'expense' | 'income'); 
-    
+   
     try {
       const parsedDate = new Date(tx.date);
       if (!isNaN(parsedDate.getTime())) {
@@ -832,14 +834,14 @@ export default function App() {
     } catch {
       setEditDate(new Date().toISOString().split('T')[0]);
     }
-    
+   
     setIsEditModalOpen(true);
   };
 
   const updateTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingId || !editAmount || !editTitle || !editDate) return;
-    
+   
     const formattedDate = new Date(editDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     const updatePayload = { 
       title: editTitle.trim(), 
@@ -859,21 +861,21 @@ export default function App() {
     } else {
       addToQueue({ action: 'UPDATE', table: 'transactions', payload: updatePayload, id: editingId });
     }
-    
+   
     setIsEditModalOpen(false); setEditingId(null);
   };
 
   const handleAddBank = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBankName.trim()) return alert('Please enter a Bank Name');
-    
+   
     let finalName = newBankName.trim();
     if (newBankDigits.trim()) {
       if (newBankDigits.trim().length !== 4) return alert('Account number must be exactly 4 digits');
       finalName = `${finalName} x${newBankDigits.trim()}`;
     }
     if (allSources.includes(finalName)) return alert('Account already exists!');
-    
+   
     const newAcc = { id: generateUUID(), name: finalName, type: 'bank', created_at: new Date().toISOString(), user_id: session?.user?.id };
 
     setBanks(prev => [...prev, finalName]);
@@ -893,7 +895,7 @@ export default function App() {
   const handleAddCard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCardDigits.trim() || newCardDigits.trim().length !== 4) return alert('Please enter exactly 4 digits');
-    
+   
     if (newCardReminder && typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'default') await Notification.requestPermission();
     }
@@ -905,7 +907,7 @@ export default function App() {
       if (!newCardBank.trim()) return alert('Please enter Bank Name');
       const cleanLimit = parseFloat(newCardLimit) || 0;
       const cleanDue = parseInt(newCardDueDate) || 0;
-      
+     
       cleanDisplayName = `${newCardBank.trim()} •••• ${newCardDigits.trim()}`;
       if (allSources.includes(cleanDisplayName)) return alert('Card already exists!');
       fullDbName = `${cleanDisplayName}|${cleanLimit}|${cleanDue}|${newCardReminder}`;
@@ -939,7 +941,7 @@ export default function App() {
     e.stopPropagation();
     if (accToDelete === 'UPI / GPay' || accToDelete === 'Cash') return alert('Default accounts cannot be deleted.');
     if (!confirm(`Are you sure you want to delete "${accToDelete}"?`)) return;
-    
+   
     setBanks(prev => prev.filter((acc: string) => acc !== accToDelete));
     if (filter === accToDelete) setFilter('All');
 
@@ -958,11 +960,11 @@ export default function App() {
   const handleDeleteCard = async (e: React.MouseEvent, cardToDelete: string) => {
     e.stopPropagation();
     if (!confirm(`Are you sure you want to delete "${cardToDelete}"?`)) return;
-    
+   
     setCards(prev => prev.filter((c: string) => c !== cardToDelete));
     setSwipedCard(null); 
     if (filter === cardToDelete) setFilter('All');
-    
+   
     // reset wheel index if we deleted the last card
     if (activeWalletIdx >= cards.length - 1 && activeWalletIdx > 0) {
       setActiveWalletIdx(prev => prev - 1);
@@ -994,7 +996,7 @@ export default function App() {
   const handleDragEnd = (clientX: number, txId: string) => {
     if (isSelectMode) return;
     const swipeDistance = dragStartX - clientX;
-    
+   
     if (swipeDistance > 35) {
       setSwipedTxId(txId); 
     } else if (swipeDistance < -35) {
@@ -1049,19 +1051,19 @@ export default function App() {
 
   // --- DYNAMIC DATA CALCULATIONS (WITH CREDIT LIMIT LOGIC) ---
   const filtered = transactions.filter((t: Transaction) => (filter === 'All' || t.source === filter) && t.title.toLowerCase().includes(searchQuery.toLowerCase()));
-  
+ 
   const isCreditCardFilter = filter !== 'All' && cardMeta[filter] && (cardMeta[filter].limit || 0) > 0;
   const isDebitCardFilter = filter !== 'All' && cardMeta[filter] && !!cardMeta[filter].linkedBank;
-  
+ 
   const activeLimit = isCreditCardFilter ? (cardMeta[filter].limit || 0) : 0;
 
   const totalSpend = filtered.filter((t: Transaction) => t.type === 'expense').reduce((acc: number, curr: Transaction) => acc + curr.amount, 0);
   const totalIncomeRaw = filtered.filter((t: Transaction) => t.type === 'income').reduce((acc: number, curr: Transaction) => acc + curr.amount, 0);
-  
+ 
   let displayTotalIncome = totalIncomeRaw;
   let displayTotalSpend = totalSpend;
   let displayNetBalance = totalIncomeRaw - totalSpend;
-  
+ 
   let leftStatLabel = 'Income';
   let rightStatLabel = 'Expenses';
 
@@ -1078,7 +1080,7 @@ export default function App() {
       displayTotalSpend = bankTxs.filter((t: Transaction) => t.type === 'expense').reduce((acc: number, curr: Transaction) => acc + curr.amount, 0);
       displayNetBalance = displayTotalIncome - displayTotalSpend;
   }
-  
+ 
   const currentMonthYear = new Date().toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
   const thisMonthTx = filtered.filter((t: Transaction) => t.date.includes(currentMonthYear));
   const thisMonthIncomeRaw = thisMonthTx.filter((t: Transaction) => t.type === 'income').reduce((acc: number, curr: Transaction) => acc + curr.amount, 0);
@@ -1105,7 +1107,7 @@ export default function App() {
   const catArray = Object.keys(catTotals).map(k => ({ name: k, amount: catTotals[k] })).sort((a, b) => b.amount - a.amount);
   const renderDonutChart = () => {
     if (totalSpend === 0) return <div className="w-28 h-28 rounded-full border-8 border-[#1E2B1F] flex items-center justify-center"><p className="text-[10px] text-gray-500">No Data</p></div>;
-    
+   
     let cumulativeOffset = 0;
     const radius = 42;
     const circum = 2 * Math.PI * radius;
@@ -1142,7 +1144,7 @@ export default function App() {
   const renderBarChart = () => {
     const buckets: { label: string; inc: number; exp: number }[] = [];
     const now = new Date();
-    
+   
     if (cashFlowView === 'Week') {
       for(let i=6; i>=0; i--) {
         const d = new Date(now.getTime() - i*24*60*60*1000);
@@ -1186,7 +1188,7 @@ export default function App() {
 
     const maxVal = Math.max(1, ...buckets.map(b => Math.max(b.inc, b.exp)));
     const chartHeight = 120;
-    
+   
     return (
       <div className={`relative h-[160px] mt-4 flex items-end justify-between px-2 ${activeChartTooltip !== null ? 'z-50' : 'z-10'}`}>
         <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pb-6 z-0">
@@ -1210,7 +1212,7 @@ export default function App() {
 
           return (
             <div key={i} className="flex flex-col items-center gap-2 relative cursor-pointer z-50" onClick={() => setActiveChartTooltip(isActive ? null : i)}>
-              
+             
               {isActive && (
                 <div className={`absolute -top-24 ${tooltipPos} bg-[#1A241C] border border-[#2A3B2D] rounded-xl p-3 shadow-2xl w-36 animate-in fade-in zoom-in-95`}>
                   <p className="text-[10px] text-gray-300 font-bold mb-2">{b.label} • {cashFlowView}</p>
@@ -1345,7 +1347,9 @@ export default function App() {
               const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                  redirectTo: `${window.location.origin}/`, 
+                  redirectTo: typeof window !== 'undefined' 
+                    ? window.location.origin 
+                    : 'https://money-tracker-rho-ebon.vercel.app', 
                 }
               });
               if (error) setAuthError(error.message);
