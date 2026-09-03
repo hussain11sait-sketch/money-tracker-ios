@@ -62,6 +62,7 @@ export default function App() {
   const [session, setSession] = useState<any>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -99,7 +100,7 @@ export default function App() {
   const [newCardDueDate, setNewCardDueDate] = useState('');
   const [newCardReminder, setNewCardReminder] = useState(true);
 
-  const [banks, setBanks] = useState<string[]>(['UPI / GPay', 'Cash']);
+  const [banks, setBanks] = useState<string[]>(['Cash']); // REMOVED UPI/GPay
   const [cards, setCards] = useState<string[]>([]);
   const [cardMeta, setCardMeta] = useState<Record<string, CardMetadata>>({});
  
@@ -140,14 +141,14 @@ export default function App() {
 
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
-  const [source, setSource] = useState('UPI / GPay');
+  const [source, setSource] = useState('Cash'); // Default fallback updated to Cash
   const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
   const [txType, setTxType] = useState<'expense' | 'income'>('expense');
  
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editAmount, setEditAmount] = useState('');
-  const [editSource, setEditSource] = useState('UPI / GPay'); 
+  const [editSource, setEditSource] = useState('Cash'); 
   const [editDate, setEditDate] = useState('');
   const [editType, setEditType] = useState<'expense' | 'income'>('expense');
 
@@ -174,9 +175,18 @@ export default function App() {
 
     try {
       if (authMode === 'signup') {
-        const { error } = await supabase.auth.signUp({ email, password });
+        if (!name.trim()) throw new Error("Please enter your name");
+        const { error } = await supabase.auth.signUp({ 
+          email, 
+          password,
+          options: {
+            data: {
+              full_name: name.trim(),
+            }
+          }
+        });
         if (error) throw error;
-        alert('Check your email for the confirmation link! (Or run the SQL command to bypass)');
+        alert('Check your email for the confirmation link! (Or sign in if confirmation is disabled)');
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -188,10 +198,37 @@ export default function App() {
     }
   };
 
+  const handleResetPassword = async () => {
+    if (!email) {
+      setAuthError('Please type your email into the box first.');
+      return;
+    }
+    setAuthSubmitLoading(true);
+    setAuthError('');
+    
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: typeof window !== 'undefined' 
+        ? `${window.location.origin}` 
+        : 'https://money-tracker-rho-ebon.vercel.app',
+    });
+    
+    setAuthSubmitLoading(false);
+    
+    if (error) {
+      setAuthError(error.message);
+    } else {
+      alert('Password reset link sent! Check your email inbox (and spam folder).');
+    }
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('mt_txs');
+    localStorage.removeItem('mt_accs');
+    localStorage.removeItem('mt_sync_queue');
+    
     setTransactions([]);
-    setBanks(['UPI / GPay', 'Cash']);
+    setBanks(['Cash']);
     setCards([]);
     setCardMeta({});
     setIsSecurityModalOpen(false);
@@ -200,7 +237,7 @@ export default function App() {
   const allSources = Array.from(new Set([...banks, ...cards]));
 
   const cleanSource = (rawSource: string) => {
-    if (!rawSource) return 'UPI / GPay';
+    if (!rawSource) return 'Cash';
     const main = rawSource.includes('->') ? rawSource.split('->')[0] : rawSource;
     return main.split('|')[0].trim();
   };
@@ -213,7 +250,7 @@ export default function App() {
   };
 
   const processAccountsData = (data: any[]) => {
-    let fetchedBanks: string[] = ['UPI / GPay', 'Cash'];
+    let fetchedBanks: string[] = ['Cash'];
     let fetchedCards: string[] = [];
     const metadataMap: Record<string, CardMetadata> = {};
 
@@ -284,14 +321,15 @@ export default function App() {
   };
 
   const fetchData = async () => {
-    if (!navigator.onLine || !session) return;
+    if (!navigator.onLine || !session?.user?.id) return;
    
     setIsRefreshing(true);
     try {
       const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 8000));
+      
       const fetchTask = Promise.all([
-        supabase.from('transactions').select('*'),
-        supabase.from('accounts').select('*')
+        supabase.from('transactions').select('*').eq('user_id', session.user.id),
+        supabase.from('accounts').select('*').eq('user_id', session.user.id)
       ]);
 
       const [txRes, accRes] = await Promise.race([fetchTask, timeout]) as any;
@@ -471,7 +509,7 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     }
-  }, [session]); // Add session to dependency so it refetches on login
+  }, [session]);
 
   // AUTO REFRESH EVERY 10 SECONDS
   useEffect(() => {
@@ -479,7 +517,7 @@ export default function App() {
       if (navigator.onLine && session) {
         fetchData();
       }
-    }, 10000); // Check every 10 seconds
+    }, 10000);
     return () => clearInterval(interval);
   }, [session]);
 
@@ -710,16 +748,13 @@ export default function App() {
     const cleanLimit = parseFloat(editCardLimitInput) || 0;
     const cleanDue = parseInt(editCardDueDateInput) || 0;
 
-    // Reconstruct the exact database string format
     const newDbName = `${editCardName}|${cleanLimit}|${cleanDue}|${editCardReminderInput}`;
 
-    // Update local React state instantly
     setCardMeta(prev => ({
       ...prev,
       [editCardName]: { ...prev[editCardName], limit: cleanLimit, dueDate: cleanDue, reminder: editCardReminderInput }
     }));
 
-    // Find and update the record in Supabase / LocalStorage
     const localAccs = JSON.parse(localStorage.getItem('mt_accs') || '[]');
     const accIndex = localAccs.findIndex((a: any) => a.type === 'card' && a.name.startsWith(editCardName + '|'));
 
@@ -939,7 +974,7 @@ export default function App() {
 
   const handleDeleteBank = async (e: React.MouseEvent, accToDelete: string) => {
     e.stopPropagation();
-    if (accToDelete === 'UPI / GPay' || accToDelete === 'Cash') return alert('Default accounts cannot be deleted.');
+    if (accToDelete === 'Cash') return alert('Cash account cannot be deleted.');
     if (!confirm(`Are you sure you want to delete "${accToDelete}"?`)) return;
    
     setBanks(prev => prev.filter((acc: string) => acc !== accToDelete));
@@ -965,7 +1000,6 @@ export default function App() {
     setSwipedCard(null); 
     if (filter === cardToDelete) setFilter('All');
    
-    // reset wheel index if we deleted the last card
     if (activeWalletIdx >= cards.length - 1 && activeWalletIdx > 0) {
       setActiveWalletIdx(prev => prev - 1);
     }
@@ -1298,6 +1332,20 @@ export default function App() {
 
         <div className="w-full max-w-sm bg-white/[0.03] backdrop-blur-2xl border border-white/[0.08] p-6 rounded-[2rem] z-10 shadow-2xl">
           <form onSubmit={handleEmailAuth} className="space-y-4">
+            
+            {/* NAME FIELD (Only visible in Sign Up mode) */}
+            {authMode === 'signup' && (
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <User className="w-5 h-5 text-gray-500" />
+                </div>
+                <input 
+                  type="text" placeholder="Your Name" value={name} onChange={(e) => setName(e.target.value)} required={authMode === 'signup'}
+                  className="w-full bg-black/40 border border-white/10 text-white rounded-[1rem] py-4 pl-12 pr-4 outline-none focus:border-[#82F87A]/50 transition-colors placeholder-gray-600 font-medium"
+                />
+              </div>
+            )}
+
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                 <Mail className="w-5 h-5 text-gray-500" />
@@ -1325,7 +1373,13 @@ export default function App() {
 
             {authMode === 'signin' && (
               <div className="text-right">
-                <button type="button" className="text-[#82F87A] text-sm font-bold hover:underline">Forgot password?</button>
+                <button 
+                  type="button" 
+                  onClick={handleResetPassword}
+                  className="text-[#82F87A] text-sm font-bold hover:underline"
+                >
+                  Forgot password?
+                </button>
               </div>
             )}
 
@@ -1413,7 +1467,9 @@ export default function App() {
         <div className="flex justify-between items-start mb-6">
           <div>
             <p className="text-gray-400 text-sm">{getGreeting()} 👋</p>
-            <h1 className="text-2xl font-bold mt-1 text-white">{session?.user?.email?.split('@')[0] || 'User'}</h1>
+            <h1 className="text-2xl font-bold mt-1 text-white">
+              {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'User'}
+            </h1>
           </div>
           <div className="flex flex-col items-end gap-2">
             <button onClick={() => setIsSecurityModalOpen(true)} className="w-10 h-10 rounded-full bg-[#131B14] border border-[#1E2B1F] flex items-center justify-center overflow-hidden hover:border-[#82F87A]/50 transition-all">
@@ -1475,7 +1531,6 @@ export default function App() {
 
             {/* WIDGET 3: Cash Flow (Bar Chart) - Fixed Dynamic Z-Index */}
             <div className="min-w-full md:min-w-0 snap-center bg-[#101A12] border border-[#1E2B1F] rounded-[32px] p-6 relative flex flex-col" onClick={() => isCashFlowDropdownOpen && setIsCashFlowDropdownOpen(false)}>
-              {/* Dynamic z-index for header so it drops behind tooltips but stays above chart normally */}
               <div className={`flex justify-between items-start mb-2 relative ${isCashFlowDropdownOpen ? 'z-50' : 'z-20'}`}>
                 <div>
                   <h3 className="text-[15px] font-bold text-gray-200 mb-1">Cash flow</h3>
@@ -1690,14 +1745,12 @@ export default function App() {
           </div>
 
           <div className="relative flex-1 w-full max-w-md mx-auto flex flex-col">
-            {/* The Wheel Container */}
             <div 
               className="relative h-[240px] w-full shrink-0"
               onTouchStart={(e) => setTouchStart(e.targetTouches[0].clientY)}
               onTouchEnd={(e) => {
                 const touchEnd = e.changedTouches[0].clientY;
                 const diff = touchStart - touchEnd;
-                // Lowered threshold to 20px for highly responsive swiping
                 if (diff > 20 && activeWalletIdx < cards.length - 1) setActiveWalletIdx(prev => prev + 1); 
                 else if (diff < -20 && activeWalletIdx > 0) setActiveWalletIdx(prev => prev - 1); 
               }}
@@ -1712,12 +1765,11 @@ export default function App() {
                   const isActive = index === activeWalletIdx;
                   const diff = index - activeWalletIdx;
                   
-                  // Wheel Math
                   const topOffset = diff * 25; 
                   const scale = 1 - Math.abs(diff) * 0.06;
                   const opacity = isActive ? 1 : Math.max(0, 1 - Math.abs(diff) * 0.4);
                   const zIndex = 50 - Math.abs(diff);
-                  const isHidden = diff < -1 || diff > 3; // Hide cards too far out of stack
+                  const isHidden = diff < -1 || diff > 3;
 
                   if (isHidden) return null;
 
@@ -1725,7 +1777,6 @@ export default function App() {
                   const meta = cardMeta[acc] || {};
                   const isDebit = !!meta.linkedBank;
                   
-                  // If debit card, pull balance from linked bank. Otherwise pull standard card balance
                   const accBalance = isDebit ? getAccountBalance(meta.linkedBank!) : getAccountBalance(acc);
 
                   let displayName = acc;
@@ -1745,7 +1796,7 @@ export default function App() {
                   return (
                     <div 
                       key={acc} 
-                      onClick={() => setActiveWalletIdx(index)} // Allows instantly bringing a card to the front by tapping it
+                      onClick={() => setActiveWalletIdx(index)}
                       className="absolute w-full h-[220px] transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] cursor-pointer" 
                       style={{ top: `${topOffset}px`, zIndex, transform: `scale(${scale}) translateY(${diff > 0 ? diff * 10 : 0}px)`, opacity }}
                     >
@@ -1783,7 +1834,6 @@ export default function App() {
               )}
             </div>
 
-            {/* The Action Menu (Appears below active card) */}
             {cards.length > 0 && (
               <div className="mt-12 bg-[#101A12] border border-[#1E2B1F] rounded-3xl p-2 animate-in fade-in slide-in-from-bottom-8 duration-500 delay-100">
                 <button 
@@ -1799,7 +1849,6 @@ export default function App() {
                 
                 <div className="h-px w-full bg-[#1E2B1F] my-1"></div>
                 
-                {/* Dynamically swap action if it's a Debit card or 0-limit card */}
                 {cards[activeWalletIdx]?.includes('Debit') || (cardMeta[cards[activeWalletIdx]]?.limit || 0) === 0 ? (
                   <button 
                     onClick={() => handleAddFunds(cards[activeWalletIdx])} 
@@ -1913,8 +1962,6 @@ export default function App() {
           </div>
 
           <form onSubmit={addTransaction} className="px-5 pb-8 space-y-4 md:max-w-md md:mx-auto md:w-full">
-            
-            {/* Amount & Type Card */}
             <div className="bg-[#101A12] border border-[#1E2B1F] rounded-[28px] p-6 relative overflow-hidden shadow-lg">
               <div className="absolute top-0 right-0 w-32 h-32 bg-[#82F87A] opacity-[0.08] blur-3xl rounded-full"></div>
               
@@ -1943,19 +1990,16 @@ export default function App() {
               </div>
             </div>
 
-            {/* Title Input */}
             <div className="bg-[#131D15] rounded-2xl p-4 border border-[#1E2B1F]">
               <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Title</label>
               <input type="text" placeholder="e.g. Netflix subscription" value={title} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)} className="w-full bg-transparent text-white placeholder-gray-600 outline-none font-bold text-[15px]" />
             </div>
 
-            {/* Date Input */}
             <div className="bg-[#131D15] rounded-2xl p-4 border border-[#1E2B1F]">
               <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Date</label>
               <input type="date" value={txDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTxDate(e.target.value)} className="w-full bg-transparent text-white outline-none font-bold text-[15px] [color-scheme:dark]" />
             </div>
 
-            {/* Source/Account Selection (Styled as Pills) */}
             <div className="bg-[#131D15] rounded-2xl p-4 border border-[#1E2B1F]">
               <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-3 block">Account</label>
               <div className="flex flex-wrap gap-2">
@@ -1988,7 +2032,6 @@ export default function App() {
           </div>
 
           <form onSubmit={updateTransaction} className="px-5 pb-8 space-y-4 md:max-w-md md:mx-auto md:w-full">
-            
             <div className="bg-[#101A12] border border-[#1E2B1F] rounded-[28px] p-6 relative overflow-hidden shadow-lg">
               <div className="absolute top-0 right-0 w-32 h-32 bg-[#82F87A] opacity-[0.08] blur-3xl rounded-full"></div>
               <p className="text-center text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3">Total Amount</p>
@@ -2116,7 +2159,7 @@ export default function App() {
                   <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Link to Bank Account</label>
                   <select value={selectedLinkedBank} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedLinkedBank(e.target.value)} className="w-full bg-transparent text-white outline-none font-bold text-[15px]">
                     <option value="" disabled>Select Bank...</option>
-                    {banks.filter(b => b !== 'UPI / GPay' && b !== 'Cash').map((acc: string) => <option key={acc} value={acc}>{acc}</option>)}
+                    {banks.filter(b => b !== 'Cash').map((acc: string) => <option key={acc} value={acc}>{acc}</option>)}
                   </select>
                 </div>
               )}
@@ -2133,7 +2176,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Security Setup Modal (WITH SIGNOUT) */}
+      {/* Security Setup Modal */}
       {isSecurityModalOpen && (
         <div className="fixed inset-0 z-[90] bg-[#070D08]/95 backdrop-blur-sm flex items-end justify-center">
           <div className="bg-[#101A12] rounded-t-[32px] w-full max-w-md mx-auto p-6 border-t border-[#1E2B1F] max-h-[85vh] overflow-y-auto">
@@ -2161,7 +2204,6 @@ export default function App() {
                   </>
                 )}
 
-                {/* SIGN OUT BUTTON */}
                 <button onClick={handleSignOut} className="w-full bg-black/40 border border-white/10 hover:border-red-500/50 text-red-400 py-4 rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all mt-6">
                   <LogOut className="w-5 h-5" /> Sign Out
                 </button>
