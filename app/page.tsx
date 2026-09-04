@@ -132,7 +132,10 @@ export default function App() {
   const [tempPin, setTempPin] = useState('');
   const [newPinToConfirm, setNewPinToConfirm] = useState('');
 
+  // --- REFS ---
   const statementInputRef = useRef<HTMLInputElement>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isLongPressTriggeredRef = useRef(false);
 
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
@@ -1673,25 +1676,48 @@ export default function App() {
             >
               All
             </button>
-            {allSources.map(acc => (
-              <div key={acc} className="flex items-center shrink-0">
+            {allSources.map(acc => {
+              const isEditableBank = acc !== 'Cash' && !cards.includes(acc);
+
+              const handlePressStart = () => {
+                isLongPressTriggeredRef.current = false;
+                if (isEditableBank) {
+                  longPressTimerRef.current = setTimeout(() => {
+                    isLongPressTriggeredRef.current = true;
+                    openEditAccountModal(acc);
+                  }, 600);
+                }
+              };
+
+              const handlePressEnd = () => {
+                if (longPressTimerRef.current) {
+                  clearTimeout(longPressTimerRef.current);
+                  longPressTimerRef.current = null;
+                }
+              };
+
+              return (
                 <button 
-                  onClick={() => setFilter(acc)} 
-                  className={`px-4 py-2.5 rounded-l-full text-sm font-semibold whitespace-nowrap transition-colors flex items-center gap-2 ${filter === acc ? 'bg-[#82F87A] text-black shadow-lg shadow-[#82F87A]/20' : 'bg-[#121A13] text-gray-300 border border-[#1E2B1F] hover:border-[#82F87A]/30'}`}
+                  key={acc}
+                  onClick={(e) => {
+                    if (isLongPressTriggeredRef.current) {
+                      e.preventDefault();
+                      return;
+                    }
+                    setFilter(acc);
+                  }} 
+                  onTouchStart={handlePressStart}
+                  onTouchEnd={handlePressEnd}
+                  onTouchMove={handlePressEnd}
+                  onMouseDown={handlePressStart}
+                  onMouseUp={handlePressEnd}
+                  onMouseLeave={handlePressEnd}
+                  className={`px-5 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors flex items-center gap-2 ${filter === acc ? 'bg-[#82F87A] text-black shadow-lg shadow-[#82F87A]/20' : 'bg-[#121A13] text-gray-300 border border-[#1E2B1F] hover:border-[#82F87A]/30'}`}
                 >
                   {acc}
                 </button>
-                {acc !== 'Cash' && !cards.includes(acc) && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); openEditAccountModal(acc); }}
-                    className={`px-2.5 py-2.5 rounded-r-full text-xs font-semibold border-l border-white/10 transition-colors flex items-center justify-center ${filter === acc ? 'bg-[#82F87A]/80 text-black' : 'bg-[#121A13] text-gray-400 border border-[#1E2B1F] hover:text-white'}`}
-                    title="Edit Bank Account"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            ))}
+              );
+            })}
             <button
               onClick={() => setIsAddBankOpen(true)}
               className="px-5 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors flex items-center gap-1 bg-[#121A13] text-[#82F87A] border border-dashed border-[#82F87A]/40 hover:bg-[#82F87A]/10"
