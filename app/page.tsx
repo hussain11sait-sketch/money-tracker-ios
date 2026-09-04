@@ -11,33 +11,12 @@ import {
   Mail, Eye, EyeOff, Coins, LogOut
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
-import { Capacitor, registerPlugin } from '@capacitor/core';
 
 export const dynamic = 'force-dynamic';
 
-// Define plugin interface and register it safely
-interface SMSInboxPlugin {
-  checkPermissions(): Promise<{ messages: string }>;
-  requestPermissions(): Promise<{ messages: string }>;
-  getSMSList(options?: any): Promise<{ messages: any[] }>;
-}
-
-const SmsReader = registerPlugin<SMSInboxPlugin>('SMSInboxReader');
-
-// No-store cache to prevent ghost entries
 const supabase = createClient(
   'https://bogwtbvmvzgbodlybgow.supabase.co',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    global: { 
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      },
-      fetch: (url, options) => fetch(url, { ...options, cache: 'no-store' }) 
-    }
-  }
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
 interface Transaction {
@@ -92,6 +71,12 @@ export default function App() {
   const [isAddBankOpen, setIsAddBankOpen] = useState(false);
   const [isAddCardOpen, setIsAddCardOpen] = useState(false);
  
+  // --- EDIT ACCOUNT STATES ---
+  const [isEditAccountModalOpen, setIsEditAccountModalOpen] = useState(false);
+  const [accountToEdit, setAccountToEdit] = useState<string | null>(null);
+  const [editAccountNameInput, setEditAccountNameInput] = useState('');
+  const [editAccountDigitsInput, setEditAccountDigitsInput] = useState('');
+
   // Edit Card State
   const [isEditCardModalOpen, setIsEditCardModalOpen] = useState(false);
   const [editCardName, setEditCardName] = useState('');
@@ -161,65 +146,6 @@ export default function App() {
   const [editSource, setEditSource] = useState('Cash'); 
   const [editDate, setEditDate] = useState('');
   const [editType, setEditType] = useState<'expense' | 'income'>('expense');
-
-  // --- ANDROID SMS INTEGRATION & PARSER ---
-  useEffect(() => {
-    const checkAndroidSMS = async () => {
-      if (Capacitor.getPlatform() !== 'android') return;
-
-      try {
-        const permissions = await SmsReader.checkPermissions();
-        if (permissions.messages !== 'granted') {
-          const requested = await SmsReader.requestPermissions();
-          if (requested.messages !== 'granted') return;
-        }
-
-        const result = await SmsReader.getSMSList({
-          filter: { limit: 5 }
-        });
-
-        if (result && result.messages) {
-          result.messages.forEach((msg: { body: string }) => {
-            const body = msg.body.toLowerCase();
-            if (body.includes('debited') || body.includes('spent')) {
-              console.log('Bank SMS detected:', msg.body);
-
-              // Regex to extract amount
-              const amountMatch = msg.body.match(/(?:INR|Rs\.?)\s*([\d,]+\.?\d*)/i);
-              if (amountMatch) {
-                const parsedAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
-                
-                // Extract merchant or fallback
-                const merchantMatch = msg.body.match(/at\s+([a-zA-Z0-9\s]+)(?:\.|$)/i);
-                const txTitle = merchantMatch ? merchantMatch[1].trim() : 'SMS Transaction';
-
-                const newTx: Transaction = {
-                  id: generateUUID(),
-                  title: txTitle,
-                  amount: parsedAmount,
-                  date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-                  source: 'HDFC',
-                  type: 'expense',
-                  created_at: new Date().toISOString(),
-                  user_id: session?.user?.id
-                };
-
-                setTransactions(prev => {
-                  const exists = prev.some(t => t.amount === newTx.amount && t.title === newTx.title);
-                  if (exists) return prev;
-                  return [newTx, ...prev];
-                });
-              }
-            }
-          });
-        }
-      } catch (err) {
-        console.error('SMS read error:', err);
-      }
-    };
-
-    checkAndroidSMS();
-  }, [session]);
 
   // --- AUTHENTICATION LOGIC ---
   useEffect(() => {
@@ -331,7 +257,7 @@ export default function App() {
       if (rawName.includes('->')) {
          linkedBankStr = rawName.split('->')[1].trim();
       }
-     
+      
       const mainPart = rawName.includes('->') ? rawName.split('->')[0] : rawName;
       const metaParts = mainPart.split('|');
       const cleanDisplayName = metaParts[0].trim();
@@ -460,7 +386,7 @@ export default function App() {
     try {
       const credIdBase64 = localStorage.getItem('mt_cred_id');
       if (!credIdBase64) return;
-     
+      
       const binaryString = atob(credIdBase64);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
@@ -471,7 +397,7 @@ export default function App() {
         userVerification: "required",
         timeout: 60000
       };
-     
+      
       const assertion = await navigator.credentials.get({ publicKey });
       if (assertion) {
         setIsLocked(false);
@@ -494,7 +420,7 @@ export default function App() {
         timeout: 60000,
         attestation: "none"
       };
-     
+      
       const cred = await navigator.credentials.create({ publicKey });
       if (cred) {
         localStorage.setItem('mt_bio', 'true');
@@ -644,7 +570,7 @@ export default function App() {
     if (!banks.includes(detectedBank) && !cards.includes(detectedBank)) {
       setBanks(prev => [...prev, detectedBank]);
       const newAcc = { id: generateUUID(), name: detectedBank, type: 'bank', created_at: new Date().toISOString(), user_id: session?.user?.id };
-     
+      
       const localAccs = JSON.parse(localStorage.getItem('mt_accs') || '[]');
       localStorage.setItem('mt_accs', JSON.stringify([...localAccs, newAcc]));
 
@@ -679,7 +605,7 @@ export default function App() {
       if (dateIdx === -1 || descIdx === -1) return;
 
       const dateRegex = /\d{2}[\/\-]\d{2}[\/\-]\d{2,4}/;
-     
+      
       if (cols[dateIdx] && dateRegex.test(cols[dateIdx])) {
          const rawDateStr = cols[dateIdx].match(dateRegex)?.[0];
          if (!rawDateStr) return;
@@ -800,6 +726,68 @@ export default function App() {
     } else {
       addToQueue({ action: 'INSERT', table: 'transactions', payload: [newTx] });
     }
+  };
+
+  // --- ACCOUNT EDIT HANDLERS ---
+  const openEditAccountModal = (accName: string) => {
+    setAccountToEdit(accName);
+    let cleanName = accName;
+    let digits = '';
+    if (accName.includes(' x')) {
+      const parts = accName.split(' x');
+      cleanName = parts[0].trim();
+      digits = parts[1].trim();
+    }
+    setEditAccountNameInput(cleanName);
+    setEditAccountDigitsInput(digits);
+    setIsEditAccountModalOpen(true);
+  };
+
+  const handleUpdateAccountSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accountToEdit || !editAccountNameInput.trim()) return alert('Please enter an account name');
+
+    let finalNewName = editAccountNameInput.trim();
+    if (editAccountDigitsInput.trim()) {
+      if (editAccountDigitsInput.trim().length !== 4) return alert('Account number must be exactly 4 digits');
+      finalNewName = `${finalNewName} x${editAccountDigitsInput.trim()}`;
+    }
+
+    if (allSources.includes(finalNewName) && finalNewName !== accountToEdit) {
+      return alert('An account with this name already exists!');
+    }
+
+    setBanks(prev => prev.map(b => b === accountToEdit ? finalNewName : b));
+    if (filter === accountToEdit) setFilter(finalNewName);
+
+    const updatedTxs = transactions.map(t => t.source === accountToEdit ? { ...t, source: finalNewName } : t);
+    setTransactions(updatedTxs);
+    localStorage.setItem('mt_txs', JSON.stringify(updatedTxs));
+
+    const localAccs = JSON.parse(localStorage.getItem('mt_accs') || '[]');
+    const accIndex = localAccs.findIndex((a: any) => a.name === accountToEdit && a.type === 'bank');
+    let accId = null;
+
+    if (accIndex !== -1) {
+      accId = localAccs[accIndex].id;
+      localAccs[accIndex].name = finalNewName;
+      localStorage.setItem('mt_accs', JSON.stringify(localAccs));
+    }
+
+    if (isOnline) {
+      if (accId) {
+        await supabase.from('accounts').update({ name: finalNewName }).eq('id', accId);
+      }
+      await supabase.from('transactions').update({ source: finalNewName }).eq('source', accountToEdit).eq('user_id', session?.user?.id);
+      fetchData();
+    } else {
+      if (accId) {
+        addToQueue({ action: 'UPDATE', table: 'accounts', payload: { name: finalNewName }, id: accId });
+      }
+    }
+
+    setIsEditAccountModalOpen(false);
+    alert('Account updated successfully!');
   };
 
   const openEditCardSettings = (cardName: string) => {
@@ -926,7 +914,7 @@ export default function App() {
     setEditAmount(tx.amount.toString()); 
     setEditSource(cleanSource(tx.source)); 
     setEditType(tx.type as 'expense' | 'income'); 
-   
+    
     try {
       const parsedDate = new Date(tx.date);
       if (!isNaN(parsedDate.getTime())) {
@@ -938,7 +926,7 @@ export default function App() {
     } catch {
       setEditDate(new Date().toISOString().split('T')[0]);
     }
-   
+    
     setIsEditModalOpen(true);
   };
 
@@ -1011,7 +999,7 @@ export default function App() {
       if (!newCardBank.trim()) return alert('Please enter Bank Name');
       const cleanLimit = parseFloat(newCardLimit) || 0;
       const cleanDue = parseInt(newCardDueDate) || 0;
-     
+      
       cleanDisplayName = `${newCardBank.trim()} •••• ${newCardDigits.trim()}`;
       if (allSources.includes(cleanDisplayName)) return alert('Card already exists!');
       fullDbName = `${cleanDisplayName}|${cleanLimit}|${cleanDue}|${newCardReminder}`;
@@ -1064,19 +1052,19 @@ export default function App() {
   const handleDeleteCard = async (e: React.MouseEvent, cardToDelete: string) => {
     e.stopPropagation();
     if (!confirm(`Are you sure you want to delete "${cardToDelete}"?`)) return;
- 
+  
     setCards(prev => prev.filter((c: string) => c !== cardToDelete));
     setSwipedCard(null); 
     if (filter === cardToDelete) setFilter('All');
- 
+  
     if (activeWalletIdx >= cards.length - 1 && activeWalletIdx > 0) {
       setActiveWalletIdx(prev => prev - 1);
     }
-
+  
     const localAccs = JSON.parse(localStorage.getItem('mt_accs') || '[]');
     const filteredAccs = localAccs.filter((a: any) => !(a.type === 'card' && a.name.includes(cardToDelete)));
     localStorage.setItem('mt_accs', JSON.stringify(filteredAccs));
-
+  
     if (isOnline) {
       await supabase.from('accounts').delete().ilike('name', `%${cardToDelete}%`).eq('type', 'card');
       fetchData();
@@ -1152,7 +1140,7 @@ export default function App() {
     return <Coffee className="w-5 h-5 text-gray-300" />;
   };
 
-  // --- DYNAMIC DATA CALCULATIONS (WITH CREDIT LIMIT LOGIC) ---
+  // --- DYNAMIC DATA CALCULATIONS ---
   const filtered = transactions.filter((t: Transaction) => (filter === 'All' || t.source === filter) && t.title.toLowerCase().includes(searchQuery.toLowerCase()));
  
   const isCreditCardFilter = filter !== 'All' && cardMeta[filter] && (cardMeta[filter].limit || 0) > 0;
@@ -1208,6 +1196,7 @@ export default function App() {
   }, {});
 
   const catArray = Object.keys(catTotals).map(k => ({ name: k, amount: catTotals[k] })).sort((a, b) => b.amount - a.amount);
+  
   const renderDonutChart = () => {
     if (totalSpend === 0) return <div className="w-28 h-28 rounded-full border-8 border-[#1E2B1F] flex items-center justify-center"><p className="text-[10px] text-gray-500">No Data</p></div>;
  
@@ -1218,7 +1207,7 @@ export default function App() {
     return (
       <div className="relative w-28 h-28 shrink-0">
         <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-          {catArray.map((cat, i) => {
+          {catArray.map((cat) => {
             const ratio = cat.amount / totalSpend;
             const dashLength = ratio * circum;
             const gap = dashLength > 3 ? 4 : 0; 
@@ -1315,7 +1304,7 @@ export default function App() {
 
           return (
             <div key={i} className="flex flex-col items-center gap-2 relative cursor-pointer z-50" onClick={() => setActiveChartTooltip(isActive ? null : i)}>
-             
+              
               {isActive && (
                 <div className={`absolute -top-24 ${tooltipPos} bg-[#1A241C] border border-[#2A3B2D] rounded-xl p-3 shadow-2xl w-36 animate-in fade-in zoom-in-95`}>
                   <p className="text-[10px] text-gray-300 font-bold mb-2">{b.label} • {cashFlowView}</p>
@@ -1596,7 +1585,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* WIDGET 3: Cash Flow (Bar Chart) - Fixed Dynamic Z-Index */}
+            {/* WIDGET 3: Cash Flow (Bar Chart) */}
             <div className="min-w-full md:min-w-0 snap-center bg-[#101A12] border border-[#1E2B1F] rounded-[32px] p-6 relative flex flex-col" onClick={() => isCashFlowDropdownOpen && setIsCashFlowDropdownOpen(false)}>
               <div className={`flex justify-between items-start mb-2 relative ${isCashFlowDropdownOpen ? 'z-50' : 'z-20'}`}>
                 <div>
@@ -1685,13 +1674,23 @@ export default function App() {
               All
             </button>
             {allSources.map(acc => (
-              <button 
-                key={acc}
-                onClick={() => setFilter(acc)} 
-                className={`px-5 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors flex items-center gap-2 ${filter === acc ? 'bg-[#82F87A] text-black shadow-lg shadow-[#82F87A]/20' : 'bg-[#121A13] text-gray-300 border border-[#1E2B1F] hover:border-[#82F87A]/30'}`}
-              >
-                {acc}
-              </button>
+              <div key={acc} className="flex items-center shrink-0">
+                <button 
+                  onClick={() => setFilter(acc)} 
+                  className={`px-4 py-2.5 rounded-l-full text-sm font-semibold whitespace-nowrap transition-colors flex items-center gap-2 ${filter === acc ? 'bg-[#82F87A] text-black shadow-lg shadow-[#82F87A]/20' : 'bg-[#121A13] text-gray-300 border border-[#1E2B1F] hover:border-[#82F87A]/30'}`}
+                >
+                  {acc}
+                </button>
+                {acc !== 'Cash' && !cards.includes(acc) && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openEditAccountModal(acc); }}
+                    className={`px-2.5 py-2.5 rounded-r-full text-xs font-semibold border-l border-white/10 transition-colors flex items-center justify-center ${filter === acc ? 'bg-[#82F87A]/80 text-black' : 'bg-[#121A13] text-gray-400 border border-[#1E2B1F] hover:text-white'}`}
+                    title="Edit Bank Account"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             ))}
             <button
               onClick={() => setIsAddBankOpen(true)}
@@ -1759,7 +1758,7 @@ export default function App() {
                           <p className="text-[11px] text-gray-500 truncate mt-0.5 font-medium">{item.source} • {item.date}</p>
                         </div>
                       </div>
-                       
+                        
                       <div className="flex items-center shrink-0 pl-2">
                         <span className={`text-[15px] font-bold tracking-wide ${item.type === 'income' ? 'text-[#82F87A]' : 'text-red-400'}`}>
                           {item.type === 'income' ? '+₹' : '-₹'}{item.amount.toFixed(2)}
@@ -1799,7 +1798,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* WALLET STACK UI - WHEEL EFFECT */}
+      {/* WALLET STACK UI */}
       {isWalletOpen && (
         <div className="fixed inset-0 z-[60] bg-[#070D08]/95 backdrop-blur-2xl flex flex-col pt-16 px-5 pb-10 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
           <div className="flex justify-between items-center mb-8 shrink-0">
@@ -1919,9 +1918,9 @@ export default function App() {
                   </div>
                   <ChevronLeft className="w-5 h-5 text-gray-600 rotate-180" />
                 </button>
-                 
+                  
                 <div className="h-px w-full bg-[#1E2B1F] my-1"></div>
-                 
+                  
                 {cards[activeWalletIdx]?.includes('Debit') || (cardMeta[cards[activeWalletIdx]]?.limit || 0) === 0 ? (
                   <button 
                     onClick={() => handleAddFunds(cards[activeWalletIdx])} 
@@ -1974,6 +1973,35 @@ export default function App() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* EDIT ACCOUNT / BANK MODAL */}
+      {isEditAccountModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-[#070D08] flex flex-col animate-in slide-in-from-bottom-5 duration-300 overflow-y-auto">
+          <div className="flex items-center p-5 pt-12 md:max-w-md md:mx-auto md:w-full">
+            <button onClick={() => setIsEditAccountModalOpen(false)} className="w-10 h-10 bg-[#131D15] rounded-full flex items-center justify-center text-gray-300 border border-[#1E2B1F] hover:text-white transition-colors">
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <h2 className="flex-1 text-center text-lg font-bold mr-10">Edit Bank Account</h2>
+          </div>
+
+          <form onSubmit={handleUpdateAccountSettings} className="px-5 pb-8 space-y-4 md:max-w-md md:mx-auto md:w-full">
+            <div className="bg-[#131D15] rounded-2xl p-4 border border-[#1E2B1F]">
+              <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Bank Name</label>
+              <input type="text" value={editAccountNameInput} onChange={(e) => setEditAccountNameInput(e.target.value)} className="w-full bg-transparent text-white outline-none font-bold text-[15px]" required autoFocus />
+            </div>
+
+            <div className="bg-[#131D15] rounded-2xl p-4 border border-[#1E2B1F]">
+              <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Last 4 Digits of A/C (Optional)</label>
+              <input type="text" maxLength={4} inputMode="numeric" placeholder="e.g. 1245" value={editAccountDigitsInput} onChange={(e) => setEditAccountDigitsInput(e.target.value.replace(/\D/g, ''))} className="w-full bg-transparent text-white placeholder-gray-600 outline-none font-mono text-[18px] tracking-widest" />
+              <p className="text-xs text-gray-400 mt-2">Make sure these 4 digits match your automated SMS parser rules!</p>
+            </div>
+
+            <button type="submit" className="w-full bg-[#82F87A] text-black py-4 rounded-full font-bold text-base hover:opacity-90 transition-opacity mt-4 shadow-[0_10px_30px_rgba(130,248,122,0.2)]">
+              Update Account
+            </button>
+          </form>
         </div>
       )}
 
@@ -2202,7 +2230,7 @@ export default function App() {
                     <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Bank Name / Card Label</label>
                     <input type="text" placeholder="e.g. Kotak League, HDFC Regalia" value={newCardBank} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewCardBank(e.target.value)} className="w-full bg-transparent text-white placeholder-gray-600 outline-none font-bold text-[15px]" autoFocus={cardType === 'credit'} />
                   </div>
-                   
+                    
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-[#131D15] rounded-2xl p-4 border border-[#1E2B1F]">
                       <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Total Limit (₹)</label>

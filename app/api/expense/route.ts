@@ -25,6 +25,7 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const rawText = body.text || '';
+    const targetUserId = body.user_id; // <--- Grab the user ID sent from the iOS shortcut
 
     if (!rawText) {
       return NextResponse.json({ error: 'No text provided' }, { status: 400 });
@@ -32,12 +33,16 @@ export async function POST(request: Request) {
 
     const lowerText = rawText.toLowerCase();
 
-    // 1. DYNAMIC ACCOUNT MATCHER
+    // 1. DYNAMIC ACCOUNT MATCHER (Scoped to this specific user's accounts)
     let source = 'UPI / GPay';
     let matched = false;
 
-    // Fetch live accounts from the database
-    const { data: dbAccounts } = await supabase.from('accounts').select('name, type');
+    // Fetch live accounts scoped to the user ID if provided
+    let accountQuery = supabase.from('accounts').select('name, type');
+    if (targetUserId) {
+      accountQuery = accountQuery.eq('user_id', targetUserId);
+    }
+    const { data: dbAccounts } = await accountQuery;
     
     if (dbAccounts && dbAccounts.length > 0) {
       // Pass 1: Check for Linked Debit Cards (e.g. "Kotak Debit •••• 9839->Kotak Bank")
@@ -113,7 +118,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // NEW LOGIC: Clean the source account name before it hits the database
+    // Clean the source account name before it hits the database
     source = getCleanAccountName(source);
 
     // 3. Detect Transaction Type (Income vs Expense)
@@ -189,24 +194,31 @@ export async function POST(request: Request) {
 
     // 6. Duplicate Protection Window
     const fiveSecondsAgo = new Date(Date.now() - 5000).toISOString();
-    const { data: recentDupes } = await supabase
+    let dupeQuery = supabase
       .from('transactions')
       .select('id')
       .eq('amount', amount)
-      .eq('source', source) // Now correctly matching the clean name!
+      .eq('source', source)
       .gte('created_at', fiveSecondsAgo);
+
+    if (targetUserId) {
+      dupeQuery = dupeQuery.eq('user_id', targetUserId);
+    }
+
+    const { data: recentDupes } = await dupeQuery;
 
     if (recentDupes && recentDupes.length > 0) {
       return NextResponse.json({ success: true, message: 'Duplicate prevented', duplicate: true });
     }
 
-    // 7. Save to Supabase Database
+    // 7. Save to Supabase Database with user_id attached
     const { error: insertError } = await supabase.from('transactions').insert([{
       title: title,
       amount: amount,
       date: today,
       source: source,
-      type: txType
+      type: txType,
+      user_id: targetUserId || null // <--- Assigns it securely to your user account
     }]);
 
     if (insertError) {
