@@ -260,7 +260,7 @@ export default function App() {
       if (rawName.includes('->')) {
          linkedBankStr = rawName.split('->')[1].trim();
       }
-      
+       
       const mainPart = rawName.includes('->') ? rawName.split('->')[0] : rawName;
       const metaParts = mainPart.split('|');
       const cleanDisplayName = metaParts[0].trim();
@@ -389,7 +389,7 @@ export default function App() {
     try {
       const credIdBase64 = localStorage.getItem('mt_cred_id');
       if (!credIdBase64) return;
-      
+       
       const binaryString = atob(credIdBase64);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
@@ -400,7 +400,7 @@ export default function App() {
         userVerification: "required",
         timeout: 60000
       };
-      
+       
       const assertion = await navigator.credentials.get({ publicKey });
       if (assertion) {
         setIsLocked(false);
@@ -423,7 +423,7 @@ export default function App() {
         timeout: 60000,
         attestation: "none"
       };
-      
+       
       const cred = await navigator.credentials.create({ publicKey });
       if (cred) {
         localStorage.setItem('mt_bio', 'true');
@@ -573,7 +573,7 @@ export default function App() {
     if (!banks.includes(detectedBank) && !cards.includes(detectedBank)) {
       setBanks(prev => [...prev, detectedBank]);
       const newAcc = { id: generateUUID(), name: detectedBank, type: 'bank', created_at: new Date().toISOString(), user_id: session?.user?.id };
-      
+       
       const localAccs = JSON.parse(localStorage.getItem('mt_accs') || '[]');
       localStorage.setItem('mt_accs', JSON.stringify([...localAccs, newAcc]));
 
@@ -608,7 +608,7 @@ export default function App() {
       if (dateIdx === -1 || descIdx === -1) return;
 
       const dateRegex = /\d{2}[\/\-]\d{2}[\/\-]\d{2,4}/;
-      
+       
       if (cols[dateIdx] && dateRegex.test(cols[dateIdx])) {
          const rawDateStr = cols[dateIdx].match(dateRegex)?.[0];
          if (!rawDateStr) return;
@@ -731,7 +731,7 @@ export default function App() {
     }
   };
 
-  // --- ACCOUNT EDIT HANDLERS ---
+  // --- ACCOUNT EDIT & DELETE HANDLERS ---
   const openEditAccountModal = (accName: string) => {
     setAccountToEdit(accName);
     let cleanName = accName;
@@ -744,6 +744,57 @@ export default function App() {
     setEditAccountNameInput(cleanName);
     setEditAccountDigitsInput(digits);
     setIsEditAccountModalOpen(true);
+  };
+
+  const handleAccountLongPressMenu = async (accName: string) => {
+    if (accName === 'Cash') return;
+    const action = window.prompt(`Options for "${accName}":\nType 'edit' to rename/update digits\nType 'delete' to remove account`, 'edit');
+    if (!action) return;
+    
+    if (action.toLowerCase().includes('edit')) {
+      openEditAccountModal(accName);
+    } else if (action.toLowerCase().includes('delete')) {
+      const confirmed = window.confirm(`Are you sure you want to delete "${accName}"?`);
+      if (!confirmed) return;
+
+      const { error } = await supabase
+        .from('accounts')
+        .delete()
+        .eq('name', accName)
+        .eq('user_id', session?.user?.id);
+
+      if (error) {
+        alert("Error deleting account: " + error.message);
+      } else {
+        setBanks(prev => prev.filter((acc: string) => acc !== accName));
+        if (filter === accName) setFilter('All');
+        
+        const localAccs = JSON.parse(localStorage.getItem('mt_accs') || '[]');
+        const filteredAccs = localAccs.filter((a: any) => !(a.name === accName && a.type === 'bank'));
+        localStorage.setItem('mt_accs', JSON.stringify(filteredAccs));
+        
+        fetchData();
+      }
+    }
+  };
+
+  const handleDeleteBankHelper = async (accToDelete: string) => {
+    if (accToDelete === 'Cash') return alert('Cash account cannot be deleted.');
+    if (!confirm(`Are you sure you want to delete "${accToDelete}"?`)) return;
+ 
+    setBanks(prev => prev.filter((acc: string) => acc !== accToDelete));
+    if (filter === accToDelete) setFilter('All');
+
+    const localAccs = JSON.parse(localStorage.getItem('mt_accs') || '[]');
+    const filteredAccs = localAccs.filter((a: any) => !(a.name === accToDelete && a.type === 'bank'));
+    localStorage.setItem('mt_accs', JSON.stringify(filteredAccs));
+
+    if (isOnline) {
+      await supabase.from('accounts').delete().match({ name: accToDelete, type: 'bank' });
+      fetchData();
+    } else {
+      addToQueue({ action: 'DELETE_MATCH', table: 'accounts', match: { name: accToDelete, type: 'bank' } });
+    }
   };
 
   const handleUpdateAccountSettings = async (e: React.FormEvent) => {
@@ -917,7 +968,7 @@ export default function App() {
     setEditAmount(tx.amount.toString()); 
     setEditSource(cleanSource(tx.source)); 
     setEditType(tx.type as 'expense' | 'income'); 
-    
+     
     try {
       const parsedDate = new Date(tx.date);
       if (!isNaN(parsedDate.getTime())) {
@@ -929,7 +980,7 @@ export default function App() {
     } catch {
       setEditDate(new Date().toISOString().split('T')[0]);
     }
-    
+     
     setIsEditModalOpen(true);
   };
 
@@ -1002,7 +1053,7 @@ export default function App() {
       if (!newCardBank.trim()) return alert('Please enter Bank Name');
       const cleanLimit = parseFloat(newCardLimit) || 0;
       const cleanDue = parseInt(newCardDueDate) || 0;
-      
+       
       cleanDisplayName = `${newCardBank.trim()} •••• ${newCardDigits.trim()}`;
       if (allSources.includes(cleanDisplayName)) return alert('Card already exists!');
       fullDbName = `${cleanDisplayName}|${cleanLimit}|${cleanDue}|${newCardReminder}`;
@@ -1030,26 +1081,6 @@ export default function App() {
 
     setIsAddCardOpen(false);
     setNewCardBank(''); setNewCardDigits(''); setNewCardLimit(''); setNewCardDueDate(''); setCardType('credit'); setSelectedLinkedBank('');
-  };
-
-  const handleDeleteBank = async (e: React.MouseEvent, accToDelete: string) => {
-    e.stopPropagation();
-    if (accToDelete === 'Cash') return alert('Cash account cannot be deleted.');
-    if (!confirm(`Are you sure you want to delete "${accToDelete}"?`)) return;
- 
-    setBanks(prev => prev.filter((acc: string) => acc !== accToDelete));
-    if (filter === accToDelete) setFilter('All');
-
-    const localAccs = JSON.parse(localStorage.getItem('mt_accs') || '[]');
-    const filteredAccs = localAccs.filter((a: any) => !(a.name === accToDelete && a.type === 'bank'));
-    localStorage.setItem('mt_accs', JSON.stringify(filteredAccs));
-
-    if (isOnline) {
-      await supabase.from('accounts').delete().match({ name: accToDelete, type: 'bank' });
-      fetchData();
-    } else {
-      addToQueue({ action: 'DELETE_MATCH', table: 'accounts', match: { name: accToDelete, type: 'bank' } });
-    }
   };
 
   const handleDeleteCard = async (e: React.MouseEvent, cardToDelete: string) => {
@@ -1307,7 +1338,7 @@ export default function App() {
 
           return (
             <div key={i} className="flex flex-col items-center gap-2 relative cursor-pointer z-50" onClick={() => setActiveChartTooltip(isActive ? null : i)}>
-              
+               
               {isActive && (
                 <div className={`absolute -top-24 ${tooltipPos} bg-[#1A241C] border border-[#2A3B2D] rounded-xl p-3 shadow-2xl w-36 animate-in fade-in zoom-in-95`}>
                   <p className="text-[10px] text-gray-300 font-bold mb-2">{b.label} • {cashFlowView}</p>
@@ -1684,7 +1715,7 @@ export default function App() {
                 if (isEditableBank) {
                   longPressTimerRef.current = setTimeout(() => {
                     isLongPressTriggeredRef.current = true;
-                    openEditAccountModal(acc);
+                    handleAccountLongPressMenu(acc);
                   }, 600);
                 }
               };
@@ -1784,7 +1815,7 @@ export default function App() {
                           <p className="text-[11px] text-gray-500 truncate mt-0.5 font-medium">{item.source} • {item.date}</p>
                         </div>
                       </div>
-                        
+                       
                       <div className="flex items-center shrink-0 pl-2">
                         <span className={`text-[15px] font-bold tracking-wide ${item.type === 'income' ? 'text-[#82F87A]' : 'text-red-400'}`}>
                           {item.type === 'income' ? '+₹' : '-₹'}{item.amount.toFixed(2)}
@@ -1944,9 +1975,9 @@ export default function App() {
                   </div>
                   <ChevronLeft className="w-5 h-5 text-gray-600 rotate-180" />
                 </button>
-                  
+                   
                 <div className="h-px w-full bg-[#1E2B1F] my-1"></div>
-                  
+                   
                 {cards[activeWalletIdx]?.includes('Debit') || (cardMeta[cards[activeWalletIdx]]?.limit || 0) === 0 ? (
                   <button 
                     onClick={() => handleAddFunds(cards[activeWalletIdx])} 
@@ -2256,7 +2287,7 @@ export default function App() {
                     <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Bank Name / Card Label</label>
                     <input type="text" placeholder="e.g. Kotak League, HDFC Regalia" value={newCardBank} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewCardBank(e.target.value)} className="w-full bg-transparent text-white placeholder-gray-600 outline-none font-bold text-[15px]" autoFocus={cardType === 'credit'} />
                   </div>
-                    
+                   
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-[#131D15] rounded-2xl p-4 border border-[#1E2B1F]">
                       <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1 block">Total Limit (₹)</label>
